@@ -7,8 +7,8 @@ const int ds3231 = 0x68;
 //the display buffer
 uint16_t displayBuffer[8];
 
-//time fudging for fast/slow running rtcs
-bool fudged = false;
+/*//time fudging for fast/slow running rtcs
+bool fudged = false;*/
 
 void setup() {
 
@@ -65,14 +65,11 @@ void loop() {
     if (line.startsWith("f")) {
       int fudge = line.substring(1).toInt();
       if(fudge >= -128 && fudge <=127){
-        setDS3231alertSec(fudge);
+        setDS3231ageOffset(fudge);
         Serial.println("fudge is now: " + String(fudge));
       }else{
         Serial.println("fudge value out of bounds");
       }
-    }
-    if (line.startsWith("o")) {
-      Serial.println("ageoffset is: " + String(getDS3231ageOffset()));
     }
     
   }
@@ -81,7 +78,7 @@ void loop() {
   byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
   readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
 
-  //handle fudge
+/*  //handle fudge
   byte fudge = getDS3231alertSec();
   if(minute == 0 && second == 0 && hour%3==0){
     second = second + fudge%60;
@@ -90,7 +87,7 @@ void loop() {
     fudged = true;
   }else{
     fudged = false;
-  }
+  }*/
   
   //ouput time
   //serial
@@ -103,7 +100,7 @@ void loop() {
   }
   Serial.print(minute, DEC);
   Serial.print(" - fudge: ");
-  Serial.println(fudge, DEC);
+  Serial.println(getDS3231ageOffset(), DEC);
   //7seg
   displayBuffer[0] = to7seg(minute % 10);
   displayBuffer[1] = to7seg(minute / 10);
@@ -191,19 +188,10 @@ void readDS3231time(byte *second, byte *minute, byte *hour, byte *dayOfWeek, byt
   *year = bcdToDec(Wire.read());
 }
 
-byte getDS3231alertSec()
+/*byte getDS3231alertSec()
 {
   Wire.beginTransmission(ds3231);
   Wire.write(0x07); // set DS3231 register pointer to 07h
-  Wire.endTransmission();
-  Wire.requestFrom(ds3231, 1);
-  return Wire.read();
-}
-
-byte getDS3231ageOffset()
-{
-  Wire.beginTransmission(ds3231);
-  Wire.write(0x10); // set DS3231 register pointer to 10h
   Wire.endTransmission();
   Wire.requestFrom(ds3231, 1);
   return Wire.read();
@@ -215,6 +203,24 @@ void setDS3231alertSec(byte fudge)
   Wire.beginTransmission(ds3231);
   Wire.write(0x07); // set next input to start at the seconds register
   Wire.write(fudge); // set seconds
+  Wire.endTransmission();
+}*/
+
+byte getDS3231ageOffset()
+{
+  Wire.beginTransmission(ds3231);
+  Wire.write(0x10); // set DS3231 register pointer to 10h
+  Wire.endTransmission();
+  Wire.requestFrom(ds3231, 1);
+  return Wire.read();
+}
+
+void setDS3231ageOffset(byte off)
+{
+  // sets time and date data to DS3231
+  Wire.beginTransmission(ds3231);
+  Wire.write(0x10); // set next input to start at the age offset
+  Wire.write(off); // set seconds
   Wire.endTransmission();
 }
 
