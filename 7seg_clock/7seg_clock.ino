@@ -71,6 +71,10 @@ void loop() {
         Serial.println("fudge value out of bounds");
       }
     }
+    if (line.startsWith("o")) {
+      Serial.println("ageoffset is: " + String(getDS3231ageOffset()));
+    }
+    
   }
 
   //read time
@@ -190,7 +194,16 @@ void readDS3231time(byte *second, byte *minute, byte *hour, byte *dayOfWeek, byt
 byte getDS3231alertSec()
 {
   Wire.beginTransmission(ds3231);
-  Wire.write(0x07); // set DS3231 register pointer to 00h
+  Wire.write(0x07); // set DS3231 register pointer to 07h
+  Wire.endTransmission();
+  Wire.requestFrom(ds3231, 1);
+  return Wire.read();
+}
+
+byte getDS3231ageOffset()
+{
+  Wire.beginTransmission(ds3231);
+  Wire.write(0x10); // set DS3231 register pointer to 10h
   Wire.endTransmission();
   Wire.requestFrom(ds3231, 1);
   return Wire.read();
