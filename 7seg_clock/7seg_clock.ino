@@ -1,5 +1,19 @@
 #include <Wire.h>
 
+#define DCF_PIN 2
+
+//dcf state
+int start = 0;
+int end = 0;
+int duration = 0;
+ 
+bool signal = false;
+bool sync = false;
+int count = -1;
+int data[65];
+int hour = 0;
+int minute = 0;
+
 //LED driver adress
 const uint8_t addr = 0x70;
 const int ds3231 = 0x68;
@@ -7,14 +21,14 @@ const int ds3231 = 0x68;
 //the display buffer
 uint16_t displayBuffer[8];
 
-/*//time fudging for fast/slow running rtcs
-bool fudged = false;*/
-
 void setup() {
 
   //start serial for debug
   Serial.begin(2000000);
   while (!Serial) {;}
+
+  //init dcf
+  pinMode(DCF_PIN, INPUT);
 
   //init matrix-led driver
   //Make connection to LED-driver
@@ -43,51 +57,39 @@ void setup() {
 }
 
 void loop() {
-  //handle input/output
-  if (Serial.available() > 0) {
-    String line = Serial.readStringUntil('\n');
-    if (line.startsWith("t")) {
-      if (line.length() == 6 && line.charAt(3) == ':') {
-        int hz = line.charAt(1) - 48;
-        int he = line.charAt(2) - 48;
-        int mz = line.charAt(4) - 48;
-        int me = line.charAt(5) - 48;
-        if (hz * 10 + he < 24 && mz < 6 && me < 10 && hz * 10 + he >= 0 && mz >= 0 && me >= 0) {
-          setDS3231time(0, mz*10+me, hz*10+he, 1, 1, 1, 1);
-          setBright(calcBright(hz*10+he));
-        } else {
-          Serial.println("correct: tXX:XX, got: " + line);
-        }
-      } else {
-        Serial.println("correct: tXX:XX, got: " + line);
-      }
+  if(count > 60){ //somehow we got more than 60 bits
+    sync = false;
+  }
+  int DCF_SIGNAL = digitalRead(DCF_PIN);
+  
+  if (DCF_SIGNAL == HIGH && signal == false){ //rising edge
+    signal = true;
+    end = millis();
+    duration = end - start;
+
+    if (sync == true) {
+      data[count] = (bitFromTime(duration));
+      Serial.print (data[count]);
     }
-    if (line.startsWith("f")) {
-      int fudge = line.substring(1).toInt();
-      if(fudge >= -128 && fudge <=127){
-        setDS3231ageOffset(fudge);
-        Serial.println("fudge is now: " + String(fudge));
-      }else{
-        Serial.println("fudge value out of bounds");
-      }
+    else {
+      Serial.print(".");
     }
-    
   }
 
-  //read time
-  byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
-  readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
+  if (DCF_SIGNAL == LOW && signal == true) { //falling edge
+    signal = false;
+    start = millis();
 
-/*  //handle fudge
-  byte fudge = getDS3231alertSec();
-  if(minute == 0 && second == 0 && hour%3==0){
-    second = second + fudge%60;
-    minute = minute + fudge/60;
-    setDS3231time(second, minute, hour, dayOfWeek, dayOfMonth, month, year);
-    fudged = true;
-  }else{
-    fudged = false;
-  }*/
+    if (duration >= 1700) {
+      count = 0;
+      sync = true;
+      hour = data[29]*1+data[30]*2+data[31]*4+data[32]*8+data[33]*10+data[34]*20;
+      minute = data[21]*1+data[22]*2+data[23]*4+data[24]*8+data[25]*10+data[26]*20+data[27]*40;
+      Serial.println("\n" + String(hour) + ":" + String(minute));
+    } else {
+      count++;
+    }
+  }
   
   //ouput time
   //serial
@@ -99,8 +101,6 @@ void loop() {
     Serial.print("0");
   }
   Serial.print(minute, DEC);
-  Serial.print(" - fudge: ");
-  Serial.println(getDS3231ageOffset(), DEC);
   //7seg
   displayBuffer[0] = to7seg(minute % 10);
   displayBuffer[1] = to7seg(minute / 10);
@@ -156,81 +156,15 @@ void show() {
   Wire.endTransmission();
 }
 
-//-------------------RTC stuff ----------------
-void setDS3231time(byte second, byte minute, byte hour, byte dayOfWeek, byte dayOfMonth, byte month, byte year)
-{
-  // sets time and date data to DS3231
-  Wire.beginTransmission(ds3231);
-  Wire.write(0); // set next input to start at the seconds register
-  Wire.write(decToBcd(second)); // set seconds
-  Wire.write(decToBcd(minute)); // set minutes
-  Wire.write(decToBcd(hour)); // set hours
-  Wire.write(decToBcd(dayOfWeek)); // set day of week (1=Sunday, 7=Saturday)
-  Wire.write(decToBcd(dayOfMonth)); // set date (1 to 31)
-  Wire.write(decToBcd(month)); // set month
-  Wire.write(decToBcd(year)); // set year (0 to 99)
-  Wire.endTransmission();
-}
-
-void readDS3231time(byte *second, byte *minute, byte *hour, byte *dayOfWeek, byte *dayOfMonth, byte *month, byte *year)
-{
-  Wire.beginTransmission(ds3231);
-  Wire.write(0); // set DS3231 register pointer to 00h
-  Wire.endTransmission();
-  Wire.requestFrom(ds3231, 7);
-  // request seven bytes of data from DS3231 starting from register 00h
-  *second = bcdToDec(Wire.read() & 0x7f);
-  *minute = bcdToDec(Wire.read());
-  *hour = bcdToDec(Wire.read() & 0x3f);
-  *dayOfWeek = bcdToDec(Wire.read());
-  *dayOfMonth = bcdToDec(Wire.read());
-  *month = bcdToDec(Wire.read());
-  *year = bcdToDec(Wire.read());
-}
-
-/*byte getDS3231alertSec()
-{
-  Wire.beginTransmission(ds3231);
-  Wire.write(0x07); // set DS3231 register pointer to 07h
-  Wire.endTransmission();
-  Wire.requestFrom(ds3231, 1);
-  return Wire.read();
-}
-
-void setDS3231alertSec(byte fudge)
-{
-  // sets time and date data to DS3231
-  Wire.beginTransmission(ds3231);
-  Wire.write(0x07); // set next input to start at the seconds register
-  Wire.write(fudge); // set seconds
-  Wire.endTransmission();
-}*/
-
-byte getDS3231ageOffset()
-{
-  Wire.beginTransmission(ds3231);
-  Wire.write(0x10); // set DS3231 register pointer to 10h
-  Wire.endTransmission();
-  Wire.requestFrom(ds3231, 1);
-  return Wire.read();
-}
-
-void setDS3231ageOffset(byte off)
-{
-  // sets time and date data to DS3231
-  Wire.beginTransmission(ds3231);
-  Wire.write(0x10); // set next input to start at the age offset
-  Wire.write(off); // set seconds
-  Wire.endTransmission();
-}
-
-// Convert normal decimal numbers to binary coded decimal
-byte decToBcd(byte val)
-{
-  return( (val/10*16) + (val%10) );
-}
-// Convert binary coded decimal to normal decimal numbers
-byte bcdToDec(byte val)
-{
-  return( (val/16*10) + (val%16) );
+//-------------------DFC77 stuff ----------------
+int bitFromTime (int duration) {
+  if(duration >= 851 && duration <= 950){
+    return 0;
+  }
+  if(duration >= 750 && duration <= 850){
+    return 1;
+  }
+  //else, we have a bad connection
+  sync = false;
+  return 0;
 }
