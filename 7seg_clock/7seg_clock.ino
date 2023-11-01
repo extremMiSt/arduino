@@ -48,10 +48,10 @@ void setup() {
 
 void loop() {
   unsigned long period = getMspm();
-  unsigned long micros = getMspm();
+  unsigned long micro = micros();
 
-  if(micros - last_time > period){
-    last_time = micros;
+  if(micro - last_time > period){
+    last_time = micro;
 
     minute += 1;
     if(minute == 60){
